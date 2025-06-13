@@ -5,12 +5,19 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
-import type { UserProfile, FollowWithProfile } from '../../lib/supabase';
+import type { UserProfile } from '../../lib/supabase';
 
 interface FollowersModalProps {
   userId: string;
   type: 'followers' | 'following';
   onClose: () => void;
+}
+
+interface FollowRelation {
+  follower_id?: string;
+  following_id?: string;
+  follower?: UserProfile[];
+  following?: UserProfile[];
 }
 
 const FollowersModal: React.FC<FollowersModalProps> = ({ userId, type, onClose }) => {
@@ -77,13 +84,13 @@ const FollowersModal: React.FC<FollowersModalProps> = ({ userId, type, onClose }
       const userProfiles: UserProfile[] = [];
       
       if (data) {
-        for (const item of data as FollowWithProfile[]) {
+        for (const item of data as FollowRelation[]) {
           let profile: UserProfile | undefined;
           
-          if (type === 'followers' && item.follower) {
-            profile = item.follower;
-          } else if (type === 'following' && item.following) {
-            profile = item.following;
+          if (type === 'followers' && item.follower && Array.isArray(item.follower)) {
+            profile = item.follower[0];
+          } else if (type === 'following' && item.following && Array.isArray(item.following)) {
+            profile = item.following[0];
           }
           
           if (profile) {
