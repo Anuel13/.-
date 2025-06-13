@@ -35,19 +35,17 @@ export type UserProfile = {
 }
 
 export type UserSettings = {
-  id: string;
   user_id: string;
   private_account: boolean;
-  donation_link?: string;
-  created_at: string;
-  updated_at: string;
-}
+  receive_notifications: boolean;
+};
 
 export type AudioTrack = {
   id: string;
   user_id: string;
   title: string;
   audio_url: string;
+  description?: string;
   genre?: string;
   tags?: string[];
   created_at: string;
@@ -80,8 +78,10 @@ export type Video = {
     username: string;
     avatar_url: string | null;
     is_vip: boolean;
+    is_verified?: boolean;
   };
   audio_track?: AudioTrack;
+  thumbnail_url?: string;
 };
 
 export type Comment = {
@@ -131,13 +131,16 @@ export type Chat = {
 export type Notification = {
   id: string;
   user_id: string;
-  type: 'like' | 'comment' | 'follow' | 'message';
+  type: 'like' | 'comment' | 'comment_reply' | 'follow' | 'message' | 'mention';
+  content_id: string;
   actor_id: string;
-  reference_id?: string;
   read: boolean;
   created_at: string;
-  actor_profile?: UserProfile;
-  video?: Video;
+  actor_profile?: {
+    id: string;
+    username: string;
+    avatar_url: string | null;
+  };
 }
 
 export async function recordViewAndUpdate(videoId: string) {
