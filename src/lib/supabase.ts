@@ -106,8 +106,8 @@ export type Follow = {
 export type FollowWithProfile = {
   follower_id: string;
   following_id: string;
-  follower?: UserProfile;
-  following?: UserProfile;
+  follower?: UserProfile[];
+  following?: UserProfile[];
 }
 
 export type VideoSave = {
