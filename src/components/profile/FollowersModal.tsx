@@ -5,19 +5,12 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import type { UserProfile, FollowWithProfile } from '../../lib/supabase';
 
 interface FollowersModalProps {
   userId: string;
   type: 'followers' | 'following';
   onClose: () => void;
-}
-
-interface UserProfile {
-  id: string;
-  username: string;
-  avatar_url?: string;
-  bio?: string;
-  followers_count: number;
 }
 
 const FollowersModal: React.FC<FollowersModalProps> = ({ userId, type, onClose }) => {
@@ -80,9 +73,24 @@ const FollowersModal: React.FC<FollowersModalProps> = ({ userId, type, onClose }
       const { data, error } = await query;
       if (error) throw error;
 
-      const userProfiles = data?.map(item => 
-        type === 'followers' ? item.follower : item.following
-      ).filter(Boolean) || [];
+      // Type-safe extraction of user profiles
+      const userProfiles: UserProfile[] = [];
+      
+      if (data) {
+        for (const item of data as FollowWithProfile[]) {
+          let profile: UserProfile | undefined;
+          
+          if (type === 'followers' && item.follower) {
+            profile = item.follower;
+          } else if (type === 'following' && item.following) {
+            profile = item.following;
+          }
+          
+          if (profile) {
+            userProfiles.push(profile);
+          }
+        }
+      }
 
       setUsers(userProfiles);
       setFilteredUsers(userProfiles);
