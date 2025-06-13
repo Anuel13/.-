@@ -314,24 +314,40 @@ const VideoPlayer = ({ video, isActive }: VideoPlayerProps): JSX.Element => {
     let playTimeout: NodeJS.Timeout;
     let isPlayingPromise: Promise<void> | null = null;
     let viewTimeout: NodeJS.Timeout;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
 
-    if (videoRef.current) {
-      if (isActive) {
-        const playVideo = async () => {
-          try {
-            // Cancelar cualquier reproducción pendiente
-            if (isPlayingPromise) {
-              videoRef.current?.pause();
-              isPlayingPromise = null;
-            }
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
 
-            // Esperar un momento antes de intentar reproducir
-            await new Promise(resolve => {
-              playTimeout = setTimeout(resolve, 100);
+    if (isActive) {
+      const playVideo = async () => {
+        try {
+          // Cancelar cualquier reproducción pendiente
+          if (isPlayingPromise) {
+            videoElement.pause();
+            isPlayingPromise = null;
+          }
+
+          // Asegurarse de que el video esté cargado
+          if (videoElement.readyState < 3) {
+            await new Promise((resolve) => {
+              const handleCanPlay = () => {
+                videoElement.removeEventListener('canplay', handleCanPlay);
+                resolve(true);
+              };
+              videoElement.addEventListener('canplay', handleCanPlay);
             });
+          }
 
-            // Intentar reproducir
-            const playPromise = videoRef.current?.play();
+          // Esperar un momento antes de intentar reproducir
+          await new Promise(resolve => {
+            playTimeout = setTimeout(resolve, 300); // Aumentado a 300ms
+          });
+
+          // Intentar reproducir con manejo de errores mejorado
+          try {
+            const playPromise = videoElement.play();
             if (playPromise) {
               isPlayingPromise = playPromise;
               await isPlayingPromise;
@@ -339,43 +355,58 @@ const VideoPlayer = ({ video, isActive }: VideoPlayerProps): JSX.Element => {
             
             setIsPlaying(true);
             setShowPlayButton(false);
+            retryCount = 0; // Resetear contador de reintentos en éxito
             
             // Marcar video como visto después de un breve retraso
             if (!hasMarkedAsViewed) {
               viewTimeout = setTimeout(async () => {
                 try {
-              await marcarVideoVisto(video.id);
-              setHasMarkedAsViewed(true);
+                  await marcarVideoVisto(video.id);
+                  setHasMarkedAsViewed(true);
                 } catch (error) {
                   console.error('Error marking video as viewed:', error);
-                  // No actualizar hasMarkedAsViewed si hay error
                 }
-              }, 2000); // Esperar 2 segundos antes de marcar como visto
+              }, 2000);
             }
-          } catch (error: any) {
-            console.error('Error playing video:', error);
+          } catch (playError: any) {
+            console.error('Error playing video:', playError);
+            
+            // Reintentar reproducción si es un error de reproducción automática
+            if (retryCount < MAX_RETRIES && 
+                (playError.name === 'NotAllowedError' || 
+                 playError.name === 'AbortError')) {
+              retryCount++;
+              console.log(`Retrying playback (attempt ${retryCount})...`);
+              setTimeout(playVideo, 500 * retryCount); // Esperar más tiempo entre reintentos
+              return;
+            }
+            
             setIsPlaying(false);
             setShowPlayButton(true);
-          } finally {
-            isPlayingPromise = null;
           }
-        };
-        playVideo();
-      } else {
-        if (isPlayingPromise) {
-          videoRef.current?.pause();
+        } catch (error: any) {
+          console.error('Error in playVideo:', error);
+          setIsPlaying(false);
+          setShowPlayButton(true);
+        } finally {
           isPlayingPromise = null;
         }
-        setIsPlaying(false);
-        setShowPlayButton(true);
+      };
+      playVideo();
+    } else {
+      if (isPlayingPromise) {
+        videoElement.pause();
+        isPlayingPromise = null;
       }
+      setIsPlaying(false);
+      setShowPlayButton(true);
     }
 
     return () => {
       clearTimeout(playTimeout);
       clearTimeout(viewTimeout);
-      if (videoRef.current) {
-        videoRef.current.pause();
+      if (videoElement) {
+        videoElement.pause();
         setIsPlaying(false);
       }
     };
@@ -591,6 +622,8 @@ const VideoPlayer = ({ video, isActive }: VideoPlayerProps): JSX.Element => {
         playsInline
         muted={isMuted}
         onClick={togglePlay}
+        preload="auto"
+        data-airplay="allow"
       />
       
       {/* Audio element oculto */}
