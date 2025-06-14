@@ -32,134 +32,156 @@ const Navbar: React.FC = () => {
   };
 
   return (
-    <>
-      <nav className="fixed top-0 left-0 right-0 bg-black border-b border-gray-800 z-50 px-4 py-3 flex justify-between items-center">
-        <Link to="/" className="flex items-center">
-          <img src="/logo (2).png" alt="OmniPlay Logo" className="h-8 w-8 mr-2" />
-          <span className="text-xl font-bold bg-gradient-brand text-transparent bg-clip-text">OmniPlay</span>
-        </Link>
-        
-        <div className="flex items-center space-x-2">
-          <NotificationBell />
-          <ChatButton />
-          <button
-            onClick={toggleMenu}
-            className="p-2 hover:bg-gray-800 rounded-lg text-white"
+    <motion.nav 
+      initial={{ y: -100 }}
+      animate={{ y: 0 }}
+      transition={{ 
+        type: "spring",
+        stiffness: 100,
+        damping: 20
+      }}
+      className="fixed top-0 left-0 right-0 z-50 bg-gray-900/80 backdrop-blur-lg border-b border-gray-800"
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16">
+          {/* Logo */}
+          <motion.div 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+            className="flex-shrink-0"
           >
-            {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
-        </div>
-      </nav>
-
-      <AnimatePresence>
-        {isMenuOpen && (
-          <motion.div
-            initial={{ x: '-100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '-100%' }}
-            transition={{ type: 'tween', duration: 0.3, ease: 'easeOut' }}
-            className="fixed top-0 left-0 bottom-0 w-64 bg-black border-r border-gray-800 z-40 pt-16"
-          >
-            <div className="p-4">
-              <div className="mb-6">
-                <h3 className="text-sm font-medium text-gray-400 mb-2">Feed</h3>
-                <button
-                  onClick={() => {
-                    setFeedType('all');
-                    setIsMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center px-3 py-2 rounded-lg transition-colors duration-200 ${
-                    isFeedActive('all') 
-                      ? 'bg-blue-700 text-white' 
-                      : 'text-gray-300 hover:bg-gray-800'
-                  }`}
-                >
-                  <Compass size={20} className="mr-3" />
-                  For You
-                </button>
-                <button
-                  onClick={() => {
-                    setFeedType('following');
-                    setIsMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center px-3 py-2 rounded-lg mt-1 transition-colors duration-200 ${
-                    isFeedActive('following') 
-                      ? 'bg-blue-700 text-white' 
-                      : 'text-gray-300 hover:bg-gray-800'
-                  }`}
-                >
-                  <Users size={20} className="mr-3" />
-                  Following
-                </button>
-              </div>
-
-              <div className="space-y-1">
-                <NavItem
-                  to="/"
-                  icon={<Home size={20} />}
-                  label="Home"
-                  isActive={isRouteActive('/')}
-                  onClick={() => setIsMenuOpen(false)}
-                />
-                <NavItem
-                  to="/search"
-                  icon={<Search size={20} />}
-                  label="Search"
-                  isActive={isRouteActive('/search')}
-                  onClick={() => setIsMenuOpen(false)}
-                />
-                <NavItem
-                  to="/upload"
-                  icon={<PlusSquare size={20} />}
-                  label="Upload"
-                  isActive={isRouteActive('/upload')}
-                  onClick={() => setIsMenuOpen(false)}
-                />
-                <NavItem
-                  to="/audio"
-                  icon={<Music size={20} />}
-                  label="Audio Library"
-                  isActive={isRouteActive('/audio')}
-                  onClick={() => setIsMenuOpen(false)}
-                />
-                <NavItem
-                  to={`/profile/${user?.id}`}
-                  icon={<User size={20} />}
-                  label="Profile"
-                  isActive={isRouteActive('/profile')}
-                  onClick={() => setIsMenuOpen(false)}
-                />
-                <button
-                  onClick={() => {
-                    navigate('/settings');
-                    setIsMenuOpen(false);
-                  }}
-                  className="w-full flex items-center px-3 py-2 text-gray-300 hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                >
-                  <Settings size={20} className="mr-3" />
-                  <span>Settings</span>
-                </button>
-              </div>
-
-              <div className="absolute bottom-4 left-4 right-4">
-                <button
-                  onClick={() => {
-                    signOut();
-                    setIsMenuOpen(false);
-                  }}
-                  className="w-full flex items-center px-3 py-2 text-red-500 hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                >
-                  <LogOut size={20} className="mr-3" />
-                  <span>Logout</span>
-                </button>
-              </div>
-            </div>
+            <Link to="/" className="flex items-center space-x-2">
+              <img src="/logo.png" alt="Logo" className="h-8 w-8" />
+              <span className="text-xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+                VideoApp
+              </span>
+            </Link>
           </motion.div>
-        )}
-      </AnimatePresence>
 
-      <div className="h-14" /> {/* Spacer for fixed navbar */}
-    </>
+          {/* Navigation Links */}
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="hidden md:flex items-center space-x-8"
+          >
+            {navLinks.map((link) => (
+              <motion.div
+                key={link.path}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <NavLink
+                  to={link.path}
+                  className={({ isActive }) =>
+                    `text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'text-blue-500'
+                        : 'text-gray-300 hover:text-white'
+                    }`
+                  }
+                >
+                  {link.label}
+                </NavLink>
+              </motion.div>
+            ))}
+          </motion.div>
+
+          {/* User Menu */}
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4 }}
+            className="flex items-center space-x-4"
+          >
+            {user ? (
+              <div className="relative">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center space-x-2 focus:outline-none"
+                >
+                  <img
+                    src={user.user_metadata.avatar_url || '/default-avatar.png'}
+                    alt="Profile"
+                    className="h-8 w-8 rounded-full"
+                  />
+                  <span className="text-sm font-medium text-gray-300">
+                    {user.user_metadata.username}
+                  </span>
+                </motion.button>
+
+                <AnimatePresence>
+                  {isUserMenuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                      className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-gray-800 ring-1 ring-black ring-opacity-5"
+                    >
+                      <div className="py-1">
+                        {userMenuItems.map((item) => (
+                          <motion.div
+                            key={item.label}
+                            whileHover={{ x: 5 }}
+                          >
+                            <Link
+                              to={item.path}
+                              className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                              onClick={() => setIsUserMenuOpen(false)}
+                            >
+                              {item.label}
+                            </Link>
+                          </motion.div>
+                        ))}
+                        <motion.div
+                          whileHover={{ x: 5 }}
+                          className="border-t border-gray-700"
+                        >
+                          <button
+                            onClick={handleSignOut}
+                            className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700"
+                          >
+                            Cerrar sesión
+                          </button>
+                        </motion.div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.5 }}
+                className="flex items-center space-x-4"
+              >
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setIsLoginModalOpen(true)}
+                  className="text-sm font-medium text-gray-300 hover:text-white"
+                >
+                  Iniciar sesión
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setIsSignUpModalOpen(true)}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+                >
+                  Registrarse
+                </motion.button>
+              </motion.div>
+            )}
+          </motion.div>
+        </div>
+      </div>
+    </motion.nav>
   );
 };
 
