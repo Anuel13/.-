@@ -4,6 +4,8 @@ import type { Video, AudioTrack } from '../lib/supabase';
 import { processVideoAudio } from '../lib/audioProcessor';
 import { generateThumbnail } from '../lib/thumbnailGenerator';
 
+const VIDEO_BUCKET = 'videos';
+
 interface VideoState {
   videos: Video[];
   currentVideo: Video | null;
@@ -15,16 +17,7 @@ interface VideoState {
   hasMore: boolean;
   feedType: 'all' | 'following' | 'foryou' | 'explore';
   fetchVideos: (page: number) => Promise<void>;
-  uploadVideo: (
-    file: File,
-    title: string,
-    description: string,
-    options?: {
-    audioTrackId?: string;
-      videoVolume?: number;
-      audioVolume?: number;
-    }
-  ) => Promise<Video>;
+  uploadVideo: (file: File, title: string, description: string, options?: UploadOptions) => Promise<Video>;
   updateVideo: (videoId: string, title: string, description: string | null) => Promise<void>;
   deleteVideo: (videoId: string) => Promise<void>;
   likeVideo: (videoId: string) => Promise<boolean>;
@@ -42,13 +35,10 @@ interface UploadProgress {
 
 interface UploadOptions {
   audioTrackId?: string;
-  videoVolume?: number;
-  audioVolume?: number;
-  musicTrack?: string;
-  effects?: string[];
-  challengeId?: string;
-  hashtags?: string[];
-  mentions?: string[];
+  videoVolume: number;
+  audioVolume: number;
+  isMuted: boolean;
+  isAudioMuted: boolean;
 }
 
 const PAGE_SIZE = 5;
@@ -60,7 +50,7 @@ const sanitizeFileName = (fileName: string): string => {
 const insertVideoRecord = async (
   videoData: {
     title: string;
-    description?: string;
+    description: string | null;
     video_url: string;
     thumbnail_url: string;
     user_id: string;
@@ -68,7 +58,7 @@ const insertVideoRecord = async (
     video_volume: number;
     audio_volume: number;
   }
-) => {
+): Promise<Video> => {
   const { data, error } = await supabase.from('videos').insert([videoData]).select().single();
   if (error) {
     console.error('Error insertando video record:', error);
@@ -202,217 +192,100 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       }
     },
 
-  uploadVideo: async (
-    file: File,
-    title: string,
-    description: string,
-    options: UploadOptions = {}
-  ) => {
+  uploadVideo: async (file: File, title: string, description: string, options?: UploadOptions) => {
     try {
-      // Inicializar estado
-      set({ 
-        isUploading: true, 
-        uploadProgress: 0, 
-        uploadError: null,
-        error: null 
-      });
-      console.log('Iniciando subida de video...');
-
-      // Autenticar usuario
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        throw new Error('Usuario no autenticado');
-      }
-      console.log('Usuario autenticado:', user.id);
-      set({ uploadProgress: 5 });
-
-      // Obtener audio track si se especificó
-      let audioTrack: AudioTrack | null = null;
-      if (options.audioTrackId) {
-        console.log('Obteniendo audio track:', options.audioTrackId);
-        const { data: track, error: trackError } = await supabase
-          .from('audio_tracks')
-          .select('*, user_profile:profiles!user_id(id, username, avatar_url)')
-          .eq('id', options.audioTrackId)
-          .single();
-
-        if (trackError) {
-          throw new Error('Error al obtener el audio track');
-        }
-        audioTrack = track;
-        console.log('Audio track obtenido:', track.title);
-        set({ uploadProgress: 10 });
-      }
-
-      // Procesar el video con el audio
-      console.log('Iniciando procesamiento de audio...');
-      const processedVideo = await processVideoAudio(
-        file,
-        audioTrack,
-        options.videoVolume ?? 0,
-        options.audioVolume ?? 0.5
-      );
-      console.log('Procesamiento de audio completado');
-      set({ uploadProgress: 30 });
-
-      // Generar nombre único para el archivo
-      const timestamp = Date.now();
-      const sanitizedFileName = sanitizeFileName(file.name);
-      const storageFileName = `${user.id}/${timestamp}_${sanitizedFileName}`;
+      set({ isUploading: true, uploadProgress: 0, uploadError: null });
       
-      // Subir el video procesado con reintentos
-      console.log('Subiendo video a storage...');
-      let uploadAttempts = 0;
-      const MAX_UPLOAD_ATTEMPTS = 3;
-      let uploadError: any = null;
+      // 1. Obtener el usuario actual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No hay usuario autenticado');
 
-      while (uploadAttempts < MAX_UPLOAD_ATTEMPTS) {
-        try {
-          const { data: videoData, error: currentUploadError } = await supabase.storage
-        .from('videos')
-            .upload(storageFileName, processedVideo, {
-              cacheControl: '3600',
-              upsert: false,
-              contentType: 'video/webm'
-            });
-
-          if (currentUploadError) {
-            uploadError = currentUploadError;
-            uploadAttempts++;
-            console.warn(`Intento de subida ${uploadAttempts} fallido:`, currentUploadError);
-            
-            if (uploadAttempts < MAX_UPLOAD_ATTEMPTS) {
-              // Esperar antes de reintentar (tiempo exponencial)
-              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, uploadAttempts)));
-              continue;
-            }
-          } else {
-            uploadError = null;
-            break;
-          }
-        } catch (error) {
-          uploadError = error;
-          uploadAttempts++;
-          console.error(`Error en intento de subida ${uploadAttempts}:`, error);
-          
-          if (uploadAttempts < MAX_UPLOAD_ATTEMPTS) {
-            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, uploadAttempts)));
-            continue;
-          }
-        }
-      }
-
-      if (uploadError) {
-        throw new Error(`Error al subir video después de ${MAX_UPLOAD_ATTEMPTS} intentos: ${uploadError.message}`);
-      }
-
-      console.log('Video subido exitosamente');
-      set({ uploadProgress: 60 });
-
-      // Obtener URL pública
-      console.log('Obteniendo URL pública...');
-      const { data: publicUrlData } = supabase.storage
-        .from('videos')
-        .getPublicUrl(storageFileName);
-
-      if (!publicUrlData?.publicUrl) {
-        throw new Error('No se pudo obtener la URL pública del video');
-      }
-
-      // Generar thumbnail
-      console.log('Generando thumbnail...');
-      set({ uploadProgress: 70 });
-      const thumbnailBlob = await generateThumbnail(processedVideo);
-      const thumbnailFileName = `${user.id}/${timestamp}_thumbnail.jpg`;
+      // 2. Subir el video a Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       
-      // Subir thumbnail con reintentos
-      console.log('Subiendo thumbnail...');
-      let thumbnailAttempts = 0;
-      let thumbnailError: any = null;
+      const { data: videoData, error: uploadError } = await supabase.storage
+        .from(VIDEO_BUCKET)
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
-      while (thumbnailAttempts < MAX_UPLOAD_ATTEMPTS) {
-        try {
-          const { data: thumbnailData, error: currentThumbnailError } = await supabase.storage
-            .from('thumbnails')
-            .upload(thumbnailFileName, thumbnailBlob, {
-              cacheControl: '3600',
-              upsert: false,
-              contentType: 'image/jpeg'
-            });
+      if (uploadError) throw uploadError;
 
-          if (currentThumbnailError) {
-            thumbnailError = currentThumbnailError;
-            thumbnailAttempts++;
-            console.warn(`Intento de subida de thumbnail ${thumbnailAttempts} fallido:`, currentThumbnailError);
-            
-            if (thumbnailAttempts < MAX_UPLOAD_ATTEMPTS) {
-              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, thumbnailAttempts)));
-              continue;
-            }
-          } else {
-            thumbnailError = null;
-            break;
-          }
-        } catch (error) {
-          thumbnailError = error;
-          thumbnailAttempts++;
-          console.error(`Error en intento de subida de thumbnail ${thumbnailAttempts}:`, error);
-          
-          if (thumbnailAttempts < MAX_UPLOAD_ATTEMPTS) {
-            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, thumbnailAttempts)));
-            continue;
-          }
-        }
-      }
+      // Actualizar progreso manualmente
+      set({ uploadProgress: 50 });
 
-      if (thumbnailError) {
-        throw new Error(`Error al subir thumbnail después de ${MAX_UPLOAD_ATTEMPTS} intentos: ${thumbnailError.message}`);
-      }
+      // 3. Obtener la URL del video
+      const { data: { publicUrl: videoUrl } } = supabase.storage
+        .from(VIDEO_BUCKET)
+        .getPublicUrl(fileName);
 
-      set({ uploadProgress: 80 });
+      // 4. Generar y subir thumbnail
+      const thumbnailBlob = await generateThumbnail(file);
+      const thumbnailFileName = `${user.id}/${Date.now()}_thumb.jpg`;
+      
+      const { error: thumbnailError } = await supabase.storage
+        .from('thumbnails')
+        .upload(thumbnailFileName, thumbnailBlob, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: 'image/jpeg'
+        });
 
-      const { data: thumbnailUrlData } = supabase.storage
+      if (thumbnailError) throw thumbnailError;
+
+      const { data: { publicUrl: thumbnailUrl } } = supabase.storage
         .from('thumbnails')
         .getPublicUrl(thumbnailFileName);
 
-      if (!thumbnailUrlData?.publicUrl) {
-        throw new Error('No se pudo obtener la URL pública del thumbnail');
+      // 5. Insertar el registro en la base de datos
+      const videoRecord = await insertVideoRecord({
+        title,
+        description: description || null,
+        video_url: videoUrl,
+        thumbnail_url: thumbnailUrl,
+        user_id: user.id,
+        audio_track_id: options?.audioTrackId || null,
+        video_volume: options?.videoVolume || 1,
+        audio_volume: options?.audioVolume || 0.5
+      });
+
+      // 6. Si hay audio track, procesar el video con el audio
+      if (options?.audioTrackId) {
+        const processedVideo = await processVideoAudio(file, null, options.videoVolume, options.audioVolume);
+        const processedFileName = `${user.id}/${Date.now()}_processed.${fileExt}`;
+        
+        const { error: processedError } = await supabase.storage
+          .from(VIDEO_BUCKET)
+          .upload(processedFileName, processedVideo, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: `video/${fileExt}`
+          });
+
+        if (processedError) throw processedError;
+
+        const { data: { publicUrl: processedUrl } } = supabase.storage
+          .from(VIDEO_BUCKET)
+          .getPublicUrl(processedFileName);
+
+        // Actualizar el registro con el video procesado
+        const { error: updateError } = await supabase
+          .from('videos')
+          .update({ video_url: processedUrl })
+          .eq('id', videoRecord.id);
+
+        if (updateError) throw updateError;
       }
 
-      // Insertar metadatos
-      console.log('Insertando metadatos del video...');
-      set({ uploadProgress: 90 });
-      const video = await insertVideoRecord({
-        title,
-        description,
-        video_url: publicUrlData.publicUrl,
-        thumbnail_url: thumbnailUrlData.publicUrl,
-        user_id: user.id,
-        audio_track_id: options.audioTrackId || null,
-        video_volume: options.videoVolume ?? 0,
-        audio_volume: options.audioVolume ?? 0.5
-      });
-
-      // Actualizar lista de videos
-      console.log('Actualizando lista de videos...');
-      await get().fetchVideos(0);
-      console.log('Subida completada exitosamente');
-      set({ 
-        uploadProgress: 100, 
-        isUploading: false,
-        error: null,
-        uploadError: null
-      });
-
-      return video;
+      set({ isUploading: false, uploadProgress: 100 });
+      return videoRecord;
     } catch (error) {
-      console.error('Error en el proceso de subida:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      console.error('Error uploading video:', error);
       set({ 
-        uploadError: errorMessage,
-        error: errorMessage,
-        isUploading: false,
-        uploadProgress: 0
+        isUploading: false, 
+        uploadError: error instanceof Error ? error.message : 'Error uploading video' 
       });
       throw error;
     }
