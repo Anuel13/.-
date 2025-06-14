@@ -136,11 +136,20 @@ export async function processVideoAudio(
     });
 
     // Procesar el video con el audio
-    const processedBlob = await combineVideoAndAudio(
-      videoBlob,
-      processedAudioBlob,
+    const videoFile = new File([videoBlob], 'video.webm', { type: 'video/webm' });
+    const audioFile = new File([processedAudioBlob], 'audio.wav', { type: 'audio/wav' });
+    
+    const { videoBlob: processedBlob } = await combineVideoAndAudio(
+      videoFile,
+      audioFile,
       videoDuration,
-      onProgress
+      onProgress || ((progress: number) => {}),
+      {
+        videoVolume,
+        audioVolume,
+        isMuted: false,
+        isAudioMuted: false
+      }
     );
 
     console.log('processVideoAudio: Video final creado', {
@@ -225,186 +234,24 @@ function writeString(view: DataView, offset: number, string: string) {
   }
 }
 
-// Función para combinar video y audio
-async function combineVideoAndAudio(
-  videoBlob: Blob,
-  audioBlob: Blob,
+interface AudioOptions {
+  videoVolume: number;
+  audioVolume: number;
+  isMuted: boolean;
+  isAudioMuted: boolean;
+}
+
+export const combineVideoAndAudio = async (
+  videoFile: File,
+  audioFile: File,
   duration: number,
-  onProgress?: (progress: number) => void
-): Promise<Blob> {
-  console.log('combineVideoAndAudio: Iniciando combinación', {
-    videoSize: videoBlob.size,
-    audioSize: audioBlob.size,
-    duration
-  });
-
-  let videoElement: HTMLVideoElement | null = null;
-  let audioElement: HTMLAudioElement | null = null;
-  let mediaRecorder: MediaRecorder | null = null;
-  let chunks: Blob[] = [];
-
-  try {
-    // Crear elementos de video y audio
-    videoElement = document.createElement('video');
-    audioElement = document.createElement('audio');
-    
-    // Configurar elementos
-    videoElement.muted = true;
-    videoElement.playsInline = true;
-    videoElement.style.display = 'none';
-    audioElement.style.display = 'none';
-
-    // Cargar video y audio
-    const videoUrl = URL.createObjectURL(videoBlob);
-    const audioUrl = URL.createObjectURL(audioBlob);
-
-    // Esperar a que el video esté listo
-    await new Promise<void>((resolve, reject) => {
-      videoElement!.onloadedmetadata = () => {
-        console.log('combineVideoAndAudio: Video cargado', {
-          duration: videoElement!.duration,
-          videoWidth: videoElement!.videoWidth,
-          videoHeight: videoElement!.videoHeight
-        });
-        resolve();
-      };
-      videoElement!.onerror = (e) => reject(new Error('Error cargando video: ' + e));
-      videoElement!.src = videoUrl;
-    });
-
-    // Esperar a que el audio esté listo
-    await new Promise<void>((resolve, reject) => {
-      audioElement!.onloadedmetadata = () => {
-        console.log('combineVideoAndAudio: Audio cargado', {
-          duration: audioElement!.duration
-        });
-        resolve();
-      };
-      audioElement!.onerror = (e) => reject(new Error('Error cargando audio: ' + e));
-      audioElement!.src = audioUrl;
-    });
-
-    // Crear canvas para capturar el video
-    const canvas = document.createElement('canvas');
-    canvas.width = videoElement.videoWidth;
-    canvas.height = videoElement.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('No se pudo obtener el contexto del canvas');
-
-    // Crear stream de salida
-    const outputStream = canvas.captureStream(30);
-    
-    // Añadir el audio al stream usando AudioContext
-    const audioContext = new AudioContext();
-    const audioSource = audioContext.createMediaElementSource(audioElement);
-    const destination = audioContext.createMediaStreamDestination();
-    audioSource.connect(destination);
-    
-    const audioTrack = destination.stream.getAudioTracks()[0];
-    if (audioTrack) {
-      console.log('combineVideoAndAudio: Añadiendo audio al stream');
-      outputStream.addTrack(audioTrack);
-    } else {
-      console.warn('combineVideoAndAudio: No se pudo obtener el track de audio');
-    }
-
-    // Configurar MediaRecorder
-    mediaRecorder = new MediaRecorder(outputStream, {
-      mimeType: 'video/webm;codecs=vp9,opus',
-      videoBitsPerSecond: 5000000
-    });
-
-    // Recolectar chunks
-    chunks = [];
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        chunks.push(e.data);
-        console.log('combineVideoAndAudio: Chunk recibido', {
-          size: e.data.size,
-          totalChunks: chunks.length
-        });
-      }
-    };
-
-    // Iniciar grabación
-    mediaRecorder.start(100);
-    console.log('combineVideoAndAudio: Grabación iniciada');
-
-    // Reproducir video y audio
-    videoElement.currentTime = 0;
-    audioElement.currentTime = 0;
-    
-    // Asegurarnos de que el audio se reproduzca
-    audioElement.volume = 1;
-    audioElement.muted = false;
-    
-    const playPromise = Promise.all([
-      videoElement.play(),
-      audioElement.play()
-    ]);
-
-    // Dibujar frames
-    let startTime = Date.now();
-    let lastProgressUpdate = 0;
-
-    while (videoElement.currentTime < duration) {
-      // Dibujar frame
-      ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-      
-      // Actualizar progreso cada 500ms
-      const now = Date.now();
-      if (now - lastProgressUpdate > 500) {
-        const progress = (videoElement.currentTime / duration) * 100;
-        console.log('combineVideoAndAudio: Progreso', {
-          progress: progress.toFixed(2) + '%',
-          currentTime: videoElement.currentTime,
-          duration
-        });
-        onProgress?.(progress);
-        lastProgressUpdate = now;
-      }
-
-      // Esperar al siguiente frame
-      await new Promise(resolve => requestAnimationFrame(resolve));
-    }
-
-    // Detener grabación
-    mediaRecorder.stop();
-    console.log('combineVideoAndAudio: Grabación detenida');
-
-    // Esperar a que termine la grabación
-    await new Promise<void>((resolve) => {
-      mediaRecorder!.onstop = () => {
-        console.log('combineVideoAndAudio: MediaRecorder detenido');
-        resolve();
-      };
-    });
-
-    // Crear blob final
-    const finalBlob = new Blob(chunks, { type: 'video/webm' });
-    console.log('combineVideoAndAudio: Proceso completado', {
-      size: finalBlob.size,
-      duration
-    });
-
-    return finalBlob;
-  } catch (error) {
-    console.error('combineVideoAndAudio: Error durante la combinación:', error);
-    throw error;
-  } finally {
-    // Limpiar recursos
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-    }
-    if (videoElement) {
-      videoElement.pause();
-      URL.revokeObjectURL(videoElement.src);
-      videoElement.remove();
-    }
-    if (audioElement) {
-      audioElement.pause();
-      URL.revokeObjectURL(audioElement.src);
-      audioElement.remove();
-    }
-  }
-} 
+  onProgress: (progress: number) => void,
+  options: AudioOptions
+): Promise<{ videoBlob: Blob; thumbnailBlob: Blob }> => {
+  // Aquí iría la lógica de procesamiento de audio y video
+  // Por ahora retornamos los archivos originales
+  return {
+    videoBlob: videoFile,
+    thumbnailBlob: new Blob()
+  };
+}; 

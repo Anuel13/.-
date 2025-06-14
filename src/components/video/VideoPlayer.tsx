@@ -320,14 +320,14 @@ const VideoPlayer = ({ video, isActive }: VideoPlayerProps): JSX.Element => {
     const videoElement = videoRef.current;
     if (!videoElement) return;
 
-    if (isActive) {
-      const playVideo = async () => {
-        try {
-          // Cancelar cualquier reproducción pendiente
-          if (isPlayingPromise) {
+      if (isActive) {
+        const playVideo = async () => {
+          try {
+            // Cancelar cualquier reproducción pendiente
+            if (isPlayingPromise) {
             videoElement.pause();
-            isPlayingPromise = null;
-          }
+              isPlayingPromise = null;
+            }
 
           // Asegurarse de que el video esté cargado
           if (videoElement.readyState < 3) {
@@ -340,10 +340,10 @@ const VideoPlayer = ({ video, isActive }: VideoPlayerProps): JSX.Element => {
             });
           }
 
-          // Esperar un momento antes de intentar reproducir
-          await new Promise(resolve => {
+            // Esperar un momento antes de intentar reproducir
+            await new Promise(resolve => {
             playTimeout = setTimeout(resolve, 300); // Aumentado a 300ms
-          });
+            });
 
           // Intentar reproducir con manejo de errores mejorado
           try {
@@ -361,8 +361,8 @@ const VideoPlayer = ({ video, isActive }: VideoPlayerProps): JSX.Element => {
             if (!hasMarkedAsViewed) {
               viewTimeout = setTimeout(async () => {
                 try {
-                  await marcarVideoVisto(video.id);
-                  setHasMarkedAsViewed(true);
+              await marcarVideoVisto(video.id);
+              setHasMarkedAsViewed(true);
                 } catch (error) {
                   console.error('Error marking video as viewed:', error);
                 }
@@ -383,23 +383,23 @@ const VideoPlayer = ({ video, isActive }: VideoPlayerProps): JSX.Element => {
             
             setIsPlaying(false);
             setShowPlayButton(true);
-          }
-        } catch (error: any) {
+            }
+          } catch (error: any) {
           console.error('Error in playVideo:', error);
-          setIsPlaying(false);
-          setShowPlayButton(true);
-        } finally {
+            setIsPlaying(false);
+            setShowPlayButton(true);
+          } finally {
+            isPlayingPromise = null;
+          }
+        };
+        playVideo();
+      } else {
+        if (isPlayingPromise) {
+        videoElement.pause();
           isPlayingPromise = null;
         }
-      };
-      playVideo();
-    } else {
-      if (isPlayingPromise) {
-        videoElement.pause();
-        isPlayingPromise = null;
-      }
-      setIsPlaying(false);
-      setShowPlayButton(true);
+        setIsPlaying(false);
+        setShowPlayButton(true);
     }
 
     return () => {

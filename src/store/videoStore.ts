@@ -1,10 +1,25 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
-import type { Video, AudioTrack } from '../lib/supabase';
-import { processVideoAudio } from '../lib/audioProcessor';
+import type { AudioTrack } from '../lib/supabase';
 import { generateThumbnail } from '../lib/thumbnailGenerator';
 
 const VIDEO_BUCKET = 'videos';
+
+interface Video {
+  id: string;
+  title: string;
+  description: string | null;
+  video_url: string;
+  thumbnail_url: string;
+  user_id: string;
+  audio_track_id: string | null;
+  audio_volume: number;
+  likes_count: number;
+  comments_count: number;
+  views_count: number;
+  created_at: string;
+  updated_at: string;
+}
 
 interface VideoState {
   videos: Video[];
@@ -35,10 +50,7 @@ interface UploadProgress {
 
 interface UploadOptions {
   audioTrackId?: string;
-  videoVolume: number;
-  audioVolume: number;
-  isMuted: boolean;
-  isAudioMuted: boolean;
+  audioVolume?: number;
 }
 
 const PAGE_SIZE = 5;
@@ -47,24 +59,37 @@ const sanitizeFileName = (fileName: string): string => {
   return fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
 };
 
-const insertVideoRecord = async (
-  videoData: {
-    title: string;
-    description: string | null;
-    video_url: string;
-    thumbnail_url: string;
-    user_id: string;
-    audio_track_id: string | null;
-    video_volume: number;
-    audio_volume: number;
-  }
-): Promise<Video> => {
-  const { data, error } = await supabase.from('videos').insert([videoData]).select().single();
-  if (error) {
-    console.error('Error insertando video record:', error);
-    throw error;
-  }
-  return data;
+const insertVideoRecord = async (data: {
+  title: string;
+  description: string | null;
+  video_url: string;
+  thumbnail_url: string;
+  user_id: string;
+  audio_track_id: string | null;
+  audio_volume: number;
+}): Promise<Video> => {
+  const { data: record, error } = await supabase
+    .from('videos')
+    .insert([{
+      ...data,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }])
+    .select(`
+      *,
+      likes_count,
+      comments_count,
+      views_count
+    `)
+    .single();
+
+  if (error) throw error;
+  return {
+    ...record,
+    likes_count: record.likes_count || 0,
+    comments_count: record.comments_count || 0,
+    views_count: record.views_count || 0
+  };
 };
 
 export const useVideoStore = create<VideoState>((set, get) => ({
@@ -213,7 +238,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
       if (uploadError) throw uploadError;
 
-      // Actualizar progreso manualmente
+      // Actualizar progreso
       set({ uploadProgress: 50 });
 
       // 3. Obtener la URL del video
@@ -235,6 +260,9 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
       if (thumbnailError) throw thumbnailError;
 
+      // Actualizar progreso
+      set({ uploadProgress: 75 });
+
       const { data: { publicUrl: thumbnailUrl } } = supabase.storage
         .from('thumbnails')
         .getPublicUrl(thumbnailFileName);
@@ -247,39 +275,11 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         thumbnail_url: thumbnailUrl,
         user_id: user.id,
         audio_track_id: options?.audioTrackId || null,
-        video_volume: options?.videoVolume || 1,
         audio_volume: options?.audioVolume || 0.5
       });
 
-      // 6. Si hay audio track, procesar el video con el audio
-      if (options?.audioTrackId) {
-        const processedVideo = await processVideoAudio(file, null, options.videoVolume, options.audioVolume);
-        const processedFileName = `${user.id}/${Date.now()}_processed.${fileExt}`;
-        
-        const { error: processedError } = await supabase.storage
-          .from(VIDEO_BUCKET)
-          .upload(processedFileName, processedVideo, {
-            cacheControl: '3600',
-            upsert: false,
-            contentType: `video/${fileExt}`
-          });
-
-        if (processedError) throw processedError;
-
-        const { data: { publicUrl: processedUrl } } = supabase.storage
-          .from(VIDEO_BUCKET)
-          .getPublicUrl(processedFileName);
-
-        // Actualizar el registro con el video procesado
-        const { error: updateError } = await supabase
-          .from('videos')
-          .update({ video_url: processedUrl })
-          .eq('id', videoRecord.id);
-
-        if (updateError) throw updateError;
-      }
-
-      set({ isUploading: false, uploadProgress: 100 });
+      // Actualizar progreso final
+      set({ uploadProgress: 100, isUploading: false });
       return videoRecord;
     } catch (error) {
       console.error('Error uploading video:', error);

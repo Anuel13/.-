@@ -18,9 +18,7 @@ const UploadForm: React.FC = () => {
   const [showAudioSelector, setShowAudioSelector] = useState(false);
   const [showAudioUpload, setShowAudioUpload] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const [videoVolume, setVideoVolume] = useState(0);
   const [audioVolume, setAudioVolume] = useState(0.5);
-  const [isVideoMuted, setIsVideoMuted] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
@@ -90,14 +88,14 @@ const UploadForm: React.FC = () => {
         const thumbnail = await captureThumbnail(video);
         setThumbnailUrl(thumbnail);
 
-        setSelectedFile(file);
-        const objectUrl = URL.createObjectURL(file);
-        setVideoPreview(objectUrl);
-
+      setSelectedFile(file);
+      const objectUrl = URL.createObjectURL(file);
+      setVideoPreview(objectUrl);
+      
         // Auto-fill title
-        if (!title) {
+      if (!title) {
           const fileName = file.name.replace(/\.[^/.]+$/, "");
-          setTitle(fileName);
+        setTitle(fileName);
         }
 
         URL.revokeObjectURL(video.src);
@@ -162,15 +160,12 @@ const UploadForm: React.FC = () => {
     
     try {
       setIsProcessing(true);
-
+    
       const options = {
         audioTrackId: selectedAudioTrack?.id,
-        videoVolume,
-        audioVolume,
-        isMuted: isVideoMuted,
-        isAudioMuted
+        audioVolume
       };
-      
+    
       // Subir el video
       await uploadVideo(selectedFile, title, description, options);
       
@@ -183,9 +178,7 @@ const UploadForm: React.FC = () => {
       setTitle('');
       setDescription('');
       setSelectedAudioTrack(null);
-      setVideoVolume(0);
       setAudioVolume(0.5);
-      setIsVideoMuted(false);
       setIsAudioMuted(false);
       
       // Redirigir al feed
@@ -198,16 +191,6 @@ const UploadForm: React.FC = () => {
     }
   };
   
-  // Manejar cambios de volumen del video
-  const handleVideoVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const volume = parseFloat(e.target.value);
-    setVideoVolume(volume);
-    if (videoRef.current) {
-      videoRef.current.volume = volume;
-    }
-    setIsVideoMuted(volume === 0);
-  };
-
   // Manejar cambios de volumen del audio
   const handleAudioVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const volume = parseFloat(e.target.value);
@@ -216,21 +199,6 @@ const UploadForm: React.FC = () => {
       audioRef.current.volume = volume;
     }
     setIsAudioMuted(volume === 0);
-  };
-
-  // Alternar mute del video
-  const toggleVideoMute = () => {
-    if (videoRef.current) {
-      const newMuted = !isVideoMuted;
-      setIsVideoMuted(newMuted);
-      if (newMuted) {
-        videoRef.current.volume = 0;
-        setVideoVolume(0);
-      } else {
-        videoRef.current.volume = 1;
-        setVideoVolume(1);
-      }
-    }
   };
 
   // Alternar mute del audio
@@ -303,7 +271,6 @@ const UploadForm: React.FC = () => {
                 src={videoPreview || undefined}
                 className="w-full h-64 object-contain"
                 controls
-                onVolumeChange={(e) => setVideoVolume(e.currentTarget.volume)}
               />
               <button
                 type="button"
@@ -312,39 +279,6 @@ const UploadForm: React.FC = () => {
               >
                 <X size={20} />
               </button>
-              
-              {/* Controles de volumen del video */}
-              <div className="absolute bottom-16 left-4 flex items-center space-x-2 bg-black bg-opacity-70 rounded-lg p-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (videoRef.current) {
-                      const newMuted = !isVideoMuted;
-                      setIsVideoMuted(newMuted);
-                      videoRef.current.muted = newMuted;
-                    }
-                  }}
-                  className="text-white hover:text-gray-300"
-                >
-                  {isVideoMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={videoVolume}
-                  onChange={(e) => {
-                    const volume = parseFloat(e.target.value);
-                    setVideoVolume(volume);
-                    if (videoRef.current) {
-                      videoRef.current.volume = volume;
-                    }
-                  }}
-                  className="w-24 accent-blue-500"
-                />
-                <span className="text-white text-sm">Video</span>
-              </div>
             </div>
           </div>
         )}
@@ -583,8 +517,8 @@ const UploadForm: React.FC = () => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
-          onClick={() => setShowAudioUpload(false)}
-        >
+                  onClick={() => setShowAudioUpload(false)}
+                >
           <div onClick={e => e.stopPropagation()}>
             <AudioUploadForm 
               onClose={() => setShowAudioUpload(false)}
