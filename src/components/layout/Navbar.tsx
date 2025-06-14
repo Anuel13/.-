@@ -91,7 +91,7 @@ const Navbar: React.FC = () => {
               <span className="text-xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
                 VideoApp
               </span>
-            </Link>
+        </Link>
           </motion.div>
 
           {/* Navigation Links */}
@@ -124,7 +124,7 @@ const Navbar: React.FC = () => {
           </motion.div>
 
           {/* User Menu */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.4 }}
@@ -176,12 +176,12 @@ const Navbar: React.FC = () => {
                           whileHover={{ x: 5 }}
                           className="border-t border-gray-700"
                         >
-                          <button
+                <button
                             onClick={handleSignOut}
                             className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700"
                           >
                             Cerrar sesión
-                          </button>
+                </button>
                         </motion.div>
                       </div>
                     </motion.div>
