@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, NavLink } from 'react-router-dom';
 import { Home, Search, PlusSquare, User, LogOut, Menu, X, Compass, Users, Settings, MessageCircle, Music } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useVideoStore } from '../../store/videoStore';
@@ -7,12 +7,47 @@ import { motion, AnimatePresence } from 'framer-motion';
 import NotificationBell from '../notifications/NotificationBell';
 import ChatButton from '../chat/ChatButton';
 
+interface NavLink {
+  path: string;
+  label: string;
+}
+
+interface UserMenuItem {
+  path: string;
+  label: string;
+}
+
+const navLinks: NavLink[] = [
+  { path: '/', label: 'Inicio' },
+  { path: '/explore', label: 'Explorar' },
+  { path: '/upload', label: 'Subir' },
+  { path: '/profile', label: 'Perfil' }
+];
+
+const userMenuItems: UserMenuItem[] = [
+  { path: '/profile', label: 'Mi Perfil' },
+  { path: '/settings', label: 'Configuración' },
+  { path: '/messages', label: 'Mensajes' }
+];
+
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuthStore();
   const { feedType, setFeedType } = useVideoStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isSignUpModalOpen, setIsSignUpModalOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      navigate('/');
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+    }
+  };
 
   // Función para determinar si una ruta está activa
   const isRouteActive = (path: string) => {
@@ -74,7 +109,7 @@ const Navbar: React.FC = () => {
               >
                 <NavLink
                   to={link.path}
-                  className={({ isActive }) =>
+                  className={({ isActive }: { isActive: boolean }) =>
                     `text-sm font-medium transition-colors ${
                       isActive
                         ? 'text-blue-500'
