@@ -22,6 +22,8 @@ const UploadForm: React.FC = () => {
   const [audioVolume, setAudioVolume] = useState(0.5);
   const [isVideoMuted, setIsVideoMuted] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -38,17 +40,72 @@ const UploadForm: React.FC = () => {
     }
   }, [location.state]);
   
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const captureThumbnail = async (video: HTMLVideoElement): Promise<string> => {
+    return new Promise((resolve) => {
+      // Asegurar que se capture a los 3 segundos
+      video.currentTime = 3;
+      
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.8);
+          resolve(thumbnailUrl);
+        } else {
+          resolve('');
+        }
+      };
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith('video/')) {
-      setSelectedFile(file);
-      const objectUrl = URL.createObjectURL(file);
-      setVideoPreview(objectUrl);
-      
-      // Auto-fill title from filename if empty
-      if (!title) {
-        const fileName = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
-        setTitle(fileName);
+      try {
+        setIsProcessing(true);
+
+        // Validar tamaño
+        if (file.size > 100 * 1024 * 1024) {
+          throw new Error('El archivo es demasiado grande. Máximo 100MB');
+        }
+
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        
+        await new Promise((resolve, reject) => {
+          video.onloadedmetadata = () => {
+            if (video.duration > 600) {
+              reject(new Error('El video es demasiado largo. Máximo 10 minutos'));
+            }
+            resolve(null);
+          };
+          video.onerror = () => reject(new Error('Error al cargar el video'));
+        });
+
+        // Capturar miniatura
+        const thumbnail = await captureThumbnail(video);
+        setThumbnailUrl(thumbnail);
+
+        setSelectedFile(file);
+        const objectUrl = URL.createObjectURL(file);
+        setVideoPreview(objectUrl);
+
+        // Auto-fill title
+        if (!title) {
+          const fileName = file.name.replace(/\.[^/.]+$/, "");
+          setTitle(fileName);
+        }
+
+        URL.revokeObjectURL(video.src);
+      } catch (error) {
+        console.error('Error procesando el video:', error);
+        alert(error instanceof Error ? error.message : 'Error al procesar el video');
+      } finally {
+        setIsProcessing(false);
       }
     }
   };
@@ -64,22 +121,20 @@ const UploadForm: React.FC = () => {
     }
   };
   
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
     
     const file = e.dataTransfer.files?.[0];
     if (file && file.type.startsWith('video/')) {
-      setSelectedFile(file);
-      const objectUrl = URL.createObjectURL(file);
-      setVideoPreview(objectUrl);
+      const event = {
+        target: {
+          files: [file]
+        }
+      } as unknown as React.ChangeEvent<HTMLInputElement>;
       
-      // Auto-fill title from filename if empty
-      if (!title) {
-        const fileName = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
-        setTitle(fileName);
-      }
+      await handleFileChange(event);
     }
   };
   
@@ -89,6 +144,9 @@ const UploadForm: React.FC = () => {
       URL.revokeObjectURL(videoPreview);
       setVideoPreview(null);
     }
+    if (thumbnailUrl) {
+      setThumbnailUrl(null);
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -97,22 +155,47 @@ const UploadForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!selectedFile || !title.trim()) return;
-    
-    const options = {
-      audioTrackId: selectedAudioTrack?.id,
-      videoVolume,
-      audioVolume
-    };
-    
-    await uploadVideo(selectedFile, title, description, options);
-    if (!error) {
-      navigate('/');
+    if (!selectedFile || !title.trim()) {
+      alert('Por favor, selecciona un video y agrega un título');
+      return;
     }
-  };
-  
-  const handleCancel = () => {
-    navigate(-1); // Navega a la página anterior
+    
+    try {
+      setIsProcessing(true);
+
+      const options = {
+        audioTrackId: selectedAudioTrack?.id,
+        videoVolume,
+        audioVolume,
+        isMuted: isVideoMuted,
+        isAudioMuted
+      };
+      
+      // Subir el video
+      await uploadVideo(selectedFile, title, description, options);
+      
+      // Esperar a que se complete el procesamiento
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Limpiar el estado
+      setSelectedFile(null);
+      setVideoPreview(null);
+      setTitle('');
+      setDescription('');
+      setSelectedAudioTrack(null);
+      setVideoVolume(0);
+      setAudioVolume(0.5);
+      setIsVideoMuted(false);
+      setIsAudioMuted(false);
+      
+      // Redirigir al feed
+      navigate('/', { replace: true });
+    } catch (err) {
+      console.error('Error al subir el video:', err);
+      alert('Error al subir el video. Por favor, intenta de nuevo.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
   
   // Manejar cambios de volumen del video
@@ -213,41 +296,55 @@ const UploadForm: React.FC = () => {
             </Button>
           </div>
         ) : (
-          <div className="relative bg-gray-900 rounded-lg overflow-hidden mb-6">
-            <video
-              ref={videoRef}
-              src={videoPreview || undefined}
-              className="w-full h-64 object-contain"
-              controls
-              onVolumeChange={(e) => setVideoVolume(e.currentTarget.volume)}
-            />
-            <button
-              type="button"
-              onClick={clearSelectedFile}
-              className="absolute top-2 right-2 bg-black bg-opacity-70 rounded-full p-1 text-white hover:bg-opacity-90 transition-opacity"
-            >
-              <X size={20} />
-            </button>
-            
-            {/* Controles de volumen del video */}
-            <div className="absolute bottom-16 left-4 flex items-center space-x-2 bg-black bg-opacity-70 rounded-lg p-2">
+          <div className="space-y-4">
+            <div className="relative bg-gray-900 rounded-lg overflow-hidden">
+              <video
+                ref={videoRef}
+                src={videoPreview || undefined}
+                className="w-full h-64 object-contain"
+                controls
+                onVolumeChange={(e) => setVideoVolume(e.currentTarget.volume)}
+              />
               <button
                 type="button"
-                onClick={toggleVideoMute}
-                className="text-white hover:text-gray-300"
+                onClick={clearSelectedFile}
+                className="absolute top-2 right-2 bg-black bg-opacity-70 rounded-full p-1 text-white hover:bg-opacity-90 transition-opacity"
               >
-                {isVideoMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                <X size={20} />
               </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={videoVolume}
-                onChange={handleVideoVolumeChange}
-                className="w-24 accent-blue-500"
-              />
-              <span className="text-white text-sm">Video</span>
+              
+              {/* Controles de volumen del video */}
+              <div className="absolute bottom-16 left-4 flex items-center space-x-2 bg-black bg-opacity-70 rounded-lg p-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (videoRef.current) {
+                      const newMuted = !isVideoMuted;
+                      setIsVideoMuted(newMuted);
+                      videoRef.current.muted = newMuted;
+                    }
+                  }}
+                  className="text-white hover:text-gray-300"
+                >
+                  {isVideoMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={videoVolume}
+                  onChange={(e) => {
+                    const volume = parseFloat(e.target.value);
+                    setVideoVolume(volume);
+                    if (videoRef.current) {
+                      videoRef.current.volume = volume;
+                    }
+                  }}
+                  className="w-24 accent-blue-500"
+                />
+                <span className="text-white text-sm">Video</span>
+              </div>
             </div>
           </div>
         )}
@@ -319,7 +416,7 @@ const UploadForm: React.FC = () => {
           )}
 
           {selectedAudioTrack && (
-            <div className="bg-gray-800 rounded-lg p-4 mb-6">
+            <div className="bg-gray-800 rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 flex items-center justify-center">
@@ -442,23 +539,33 @@ const UploadForm: React.FC = () => {
         )}
 
         {/* Botones de acción */}
-        <div className="flex gap-4 mt-6">
-          <Button
+        <div className="flex justify-end space-x-4">
+          <button
             type="button"
-            variant="outline"
-            className="flex-1 py-2.5"
-            onClick={handleCancel}
+            onClick={() => navigate('/')}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+            disabled={isProcessing}
           >
             Cancelar
-          </Button>
-          <Button
+          </button>
+          <button
             type="submit"
-            variant="primary"
-            className="flex-1 py-2.5"
-            disabled={!selectedFile || !title || isUploading}
+            disabled={!selectedFile || !title.trim() || isProcessing}
+            className={`px-6 py-2 rounded-lg font-medium transition-all ${
+              !selectedFile || !title.trim() || isProcessing
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
           >
-            {isUploading ? 'Subiendo...' : 'Subir video'}
-          </Button>
+            {isProcessing ? (
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Subiendo video...</span>
+              </div>
+            ) : (
+              'Subir Video'
+            )}
+          </button>
         </div>
 
         {/* Mensaje de error general */}
@@ -483,7 +590,6 @@ const UploadForm: React.FC = () => {
               onClose={() => setShowAudioUpload(false)}
               onUploadSuccess={() => {
                 setShowAudioUpload(false);
-                // Aquí puedes agregar lógica adicional después de una subida exitosa
               }}
             />
           </div>
